@@ -121,7 +121,7 @@ static void netlink_recv_msg_fn(struct sk_buff *skb_in){
         //struct kernel_msg parsed_data;
         //memcpy(&parsed_data, nlmsg_data(nlh_recv), sizeof(struct kernel_msg));
         printk(KERN_INFO "%s(%d) : Starting fuzzing in Config Space.. ;) \n", __FUNCTION__, __LINE__);
-        test_pci_config_space(g3_fake_dev,0x0,0x1fff); //CHANGE HERE THE COVERAGE!!
+        test_pci_config_space(g3_fake_dev,0x0,0x1000); //CHANGE HERE THE COVERAGE!!
 
     }else if(nlh_recv->nlmsg_type == FUZZING_MMIO_SPACE){
         //struct kernel_msg parsed_data;
@@ -369,6 +369,11 @@ static void test_pci_config_space(struct pci_dev *dev, unsigned long start_addr,
     struct kernel_msg msg;
     u32 original_value, test_value , AERU, AERC;
     unsigned long addr;
+    unsigned long changed_offsets[512];  // Array to track changed offsets
+    u32 changed_original_values[512];    // Array to track original values
+    u32 changed_test_values[512];        // Array to track modified values
+    int change_count = 0;  // Counter for number of changes detected
+    int i;
     // //Read local AER
     // msg.type = CFG;
     // msg.is_write = 0;
@@ -404,6 +409,15 @@ static void test_pci_config_space(struct pci_dev *dev, unsigned long start_addr,
             // Print the results
             if (original_value != test_value) {
                 printk(KERN_ERR "Change detected at offset 0x%lx, default 0x%08x to 0x%08x [CHANED!]\n",addr, original_value, test_value);
+                // Store the changed offset and values in the arrays
+                if (change_count < 512) {
+                    changed_offsets[change_count] = addr;
+                    changed_original_values[change_count] = original_value;
+                    changed_test_values[change_count] = test_value;
+                    change_count++;
+                } else {
+                    printk(KERN_WARNING "Array full, cannot track more changed offsets\n");
+                }
             } else {
                 printk(KERN_INFO "No changes in offset 0x%lx, default 0x%08x to 0x%08x \n", addr, original_value, test_value);
             }
@@ -434,6 +448,20 @@ static void test_pci_config_space(struct pci_dev *dev, unsigned long start_addr,
             printk(KERN_ERR "Skipping 0x%lx offsets\n");
         }
     }
+    
+    // Display summary of all changed offsets
+    printk(KERN_INFO "========================================\n");
+    printk(KERN_INFO "Summary: Total changed offsets detected: %d\n", change_count);
+    if (change_count > 0) {
+        printk(KERN_INFO "Changed offsets:\n");
+        for (i = 0; i < change_count; i++) {
+            printk(KERN_INFO "  [%d] Offset: 0x%lx, Original: 0x%08x, Modified: 0x%08x\n", 
+                   i, changed_offsets[i], changed_original_values[i], changed_test_values[i]);
+        }
+    } else {
+        printk(KERN_INFO "No changes detected in the tested range.\n");
+    }
+    printk(KERN_INFO "========================================\n");
     printk(KERN_INFO "Finished testing PCI configuration space for device %s\n", pci_name(dev));
 }
 
